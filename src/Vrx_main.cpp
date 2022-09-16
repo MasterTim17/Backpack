@@ -34,6 +34,8 @@
   #include "hdzero.h"
 #elif defined(SKYZONE_MSP_BACKPACK)
   #include "skyzone_msp.h"
+#elif defined(HEADTRACKER_BACKPACK)
+  #include "headtracker.h"
 #endif
 
 /////////// DEFINES ///////////
@@ -102,6 +104,8 @@ VrxBackpackConfig config;
   HDZero vrxModule(&Serial);
 #elif defined(SKYZONE_MSP_BACKPACK)
   SkyzoneMSP vrxModule(&Serial);
+#elif defined(HEADTRACKER_BACKPACK)
+  Headtracker vrxModule(&Serial);
 #endif
 
 /////////// FUNCTION DEFS ///////////
@@ -364,6 +368,10 @@ void setup()
     // If we're not on HDZ, init serial early for debug msgs
     // Otherwise, delay it till the end of setup
     Serial.begin(VRX_UART_BAUD);
+  #endif
+  #ifdef DEBUG_LOG
+    Serial.begin(115200);
+    Serial.setDebugOutput(true);
   #endif
   eeprom.Begin();
   config.SetStorageProvider(&eeprom);
