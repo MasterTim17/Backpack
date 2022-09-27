@@ -67,7 +67,7 @@ Headtracker::Init()
 void
 Headtracker::Loop(uint32_t now)
 {
-    if((now-m_last)>500){
+    if((now-m_last)>70){ // it seems like a buffer is overloading when <60
 
         mspPacket_t packet;
         packet.reset();
@@ -75,6 +75,7 @@ Headtracker::Loop(uint32_t now)
         packet.function = MSP_ELRS_BACKPACK_HEADTRACKER;
 
         int yaw=0;
+        static int dynamicYaw=0;
         int pitch=0;
 
 #ifdef USE_QMC5883
@@ -82,46 +83,50 @@ Headtracker::Loop(uint32_t now)
         compass.setDeclinationAngle(declinationAngle);
         sVector_t mag = compass.readRaw();
         compass.getHeadingDegrees();
-        yaw = mag.HeadingDegress*10;
+        yaw = mag.HeadingDegress*10 + dynamicYaw;
+
+        if(yaw>2700) yaw=yaw-3600;
+        else if(yaw>1800) yaw=-450;
+        else if(yaw>450) yaw=450;
 #endif
 
 #ifdef USE_MPU6050
-        yaw = ypr[0]*1800/PI;
+        yaw = ypr[0]*1800/PI + dynamicYaw;
         pitch = ypr[1]*1800/PI;
 
         //accelerometer
-        Serial.print("ypr\t");
-        Serial.print(ypr[0] * 180/PI);
-        Serial.print("\t");
-        Serial.print(ypr[1] * 180/PI);
-        Serial.print("\t");
-        Serial.println(ypr[2] * 180/PI);
+        // Serial.print("ypr\t");
+        // Serial.print(ypr[0] * 180/PI);
+        // Serial.print("\t");
+        // Serial.print(ypr[1] * 180/PI);
+        // Serial.print("\t");
+        // Serial.println(ypr[2] * 180/PI);
 
+        // handle gimbal lock for yaw
+        if(yaw>1800){ 
+            dynamicYaw -= 3600;
+            yaw-=3600;
+        }else if(yaw<-1800){
+            dynamicYaw += 3600;
+            yaw+=3600;
+        }
 #endif
 
-        if(yaw>2700) yaw=yaw-3600;
-        else if(yaw>1800) yaw=-900;
-        else if(yaw>900) yaw=900;
+        if(yaw>450){
+            dynamicYaw-=yaw-450;
+            yaw=450;
+        }else if(yaw<-450) {
+            dynamicYaw+=-yaw-450;
+            yaw=-450;
+        }
         
-        if(pitch>2700) pitch=pitch-3600;
-        else if(pitch>1800) pitch=-450;
-        else if(pitch>450) pitch=450;
-        
+        if(pitch>450) pitch=450;
+        else if(pitch<-450) pitch=-450;
 
-        
-    
-        
-        Serial.print("yaw*10 = ");
-        Serial.print(yaw);
-        Serial.print(", pitch*10 = ");
-        Serial.println(pitch);
-        // mapping from 0-360 to -900 - 900
-
-        
-        packet.addByte(yaw>>8);  // payload1
-        packet.addByte(yaw);  // payload2 y=p1*256+p2
-        packet.addByte(pitch>>8);  // payload3
-        packet.addByte(pitch);  // payload4 x=p3*256+p4
+        packet.addByte(yaw>>8);
+        packet.addByte(yaw);
+        packet.addByte(pitch>>8);
+        packet.addByte(pitch);
         sendMSPViaEspnow(&packet);
 
         m_last = now;
