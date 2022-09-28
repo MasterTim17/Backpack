@@ -34,6 +34,8 @@ uint8_t mpuIntStatus;   // holds actual interrupt status byte from MPU
 Quaternion q;           // [w, x, y, z]         quaternion container
 VectorFloat gravity;    // [x, y, z]            gravity vector
 float ypr[3];           // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector
+bool firstBoot;         // used to detect orientation of headtracker
+int orient = 0;
 #endif
 
 void
@@ -57,9 +59,19 @@ Headtracker::Init()
         Serial.println("Could not initialize dmp of MPU6050!");
         delay(500);
     }
+
+    // mpu.setXGyroOffset(mpu.getXGyroOffset());
+    // mpu.setYGyroOffset(mpu.getYGyroOffset());
+    // mpu.setZGyroOffset(mpu.getZGyroOffset());
+    // mpu.setZAccelOffset(mpu.getZAccelOffset());
+
+    // mpu.CalibrateAccel();
+    // mpu.CalibrateGyro();
+
     mpu.setDMPEnabled(true);
     mpuIntStatus = mpu.getIntStatus();
     packetSize = mpu.dmpGetFIFOPacketSize();
+    firstBoot = true;
 #endif
 
 }
@@ -67,7 +79,7 @@ Headtracker::Init()
 void
 Headtracker::Loop(uint32_t now)
 {
-    if((now-m_last)>70){ // it seems like a buffer is overloading when <60
+    if((now-m_last)>70 && !firstBoot){ // it seems like a buffer is overloading when <60
 
         mspPacket_t packet;
         packet.reset();
@@ -110,6 +122,9 @@ Headtracker::Loop(uint32_t now)
             dynamicYaw += 3600;
             yaw+=3600;
         }
+
+        if(pitch>900) pitch=1800-pitch;
+        else if(pitch<-900) pitch=-1800-pitch;
 #endif
 
         if(yaw>450){
@@ -119,7 +134,7 @@ Headtracker::Loop(uint32_t now)
             dynamicYaw+=-yaw-450;
             yaw=-450;
         }
-        
+
         if(pitch>450) pitch=450;
         else if(pitch<-450) pitch=-450;
 
@@ -158,6 +173,36 @@ Headtracker::Loop(uint32_t now)
         // accelerometer
         mpu.dmpGetQuaternion(&q, fifoBuffer);
         mpu.dmpGetGravity(&gravity, &q);
+
+        if(firstBoot && now>5000){ // wait until mpu gets stable output
+            if(abs(gravity.y)>0.7){
+                orient = 1;
+                Serial.println("Orientation y");
+            }else if(abs(gravity.x)>0.7){
+                orient = 2;
+                Serial.println("Orientation x");
+            }
+            firstBoot = false;
+        }else{
+            // adjust ypr inputs to the new orientation
+            // WARNING: yaw axis is bugged when in another orientation
+            if(orient == 1){
+                float og = gravity.y;
+                gravity.y = gravity.z;
+                gravity.z = og;
+                float oq = q.y;
+                q.y = q.z;
+                q.z = oq;
+            } else if(orient == 2){
+                float og = gravity.x;
+                gravity.x = gravity.z;
+                gravity.z = og;
+                float oq = q.x;
+                q.x = q.z;
+                q.z = oq;
+            }
+        }
+
         mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
     }
 #endif
